@@ -1,5 +1,3 @@
-
-
 # ptq-gpu
 
 Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — served as TensorRT engines on real GPU hardware.
@@ -11,6 +9,8 @@ Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — s
 
 > [!WARNING]
 > **Status:** the **FP16** variants are validated end-to-end (build → serve → correct image → benchmark). **INT8** (entropy calibration) and **FP8** (ModelOpt Q/DQ) are in progress and currently build as FP16 fallbacks, so their latency numbers aren't yet distinct. The demo plane is what CI exercises.
+
+
 
 # Table of contents
 
@@ -49,6 +49,8 @@ Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — s
 
 ---
 
+
+
 ## Overview
 
 **ptq-gpu** exists to answer one question with real numbers: *what does quantising
@@ -59,7 +61,7 @@ hardware**: p50/p95/p99 latency, peak VRAM, and quality.
 
 Latency is the deliverable, so two things matter:
 
-- **The engines are prebuilt TensorRT `.plan` files.** There is no Hugging Face or
+- **The engines are prebuilt TensorRT** `.plan` **files.** There is no Hugging Face or
 `diffusers` at serving time — the text encoders, UNet, and VAE run as engines and
 the scheduler is vendored. That strips framework overhead out of the measurement.
 - **It runs on a pinned GPU (EKS), not a serverless pool.** One dedicated card gives
@@ -71,6 +73,8 @@ metrics side by side; `scripts/bench.py` produces the percentile tables.
 [back to top](#readme-top)
 
 ---
+
+
 
 ## How it works
 
@@ -128,6 +132,8 @@ flowchart TB
 
 
 
+
+
 ### Two planes
 
 The service picks its backend at startup, so the exact same product runs with or
@@ -157,14 +163,23 @@ stateDiagram-v2
 
 
 
+
+
 ### Serving
 
-`inference/` is a FastAPI service exposing three endpoints — `GET /variants`,
-`POST /generate` (SSE), and `GET /healthz`. `TensorRTBackend` keeps an LRU set of
-engine bundles hot in VRAM (`max_resident`), runs the denoise loop, and measures
-cold-load / denoise / VAE latency, throughput, and peak VRAM around the real work.
-Engine bundles are synced from S3 into the pod by an init container — nothing is
-downloaded from Hugging Face at request time. A single `POST /generate` on the
+`inference/` is a FastAPI service exposing three endpoints :- 
+
+- `GET /variants`
+
+- `POST /generate` (SSE)
+
+- `GET /healthz`
+
+`TensorRTBackend` keeps an LRU set of  
+engine bundles hot in VRAM (`max_resident`), runs the denoise loop, and measures  
+cold-load / denoise / VAE latency, throughput, and peak VRAM around the real work.  
+Engine bundles are synced from S3 into the pod by an init container — nothing is  
+downloaded from Hugging Face at request time. A single `POST /generate` on the  
 real plane flows like this:
 
 ```mermaid
@@ -198,6 +213,8 @@ sequenceDiagram
 
 
 
+
+
 ### Build pipeline
 
 `pipelines/` turns the base checkpoint into the servable engines. This is offline
@@ -210,6 +227,8 @@ flowchart LR
     trt --> s3[("publish to S3")]
     s3 --> sync["serving pod syncs<br/>bundles to /engines"]
 ```
+
+
 
 `build_flow.py` (Metaflow + Ray) orchestrates train-LoRA → build → benchmark on any
 CUDA GPU. Only the UNet is quantised; the VAE (fp16-fix) and text encoders stay FP16.
@@ -225,6 +244,8 @@ dedicated card = reproducible latency. The web app is hosted separately on Verce
 [back to top](#readme-top)
 
 ---
+
+
 
 ## Variants
 
@@ -250,12 +271,18 @@ tradeoff on a single L40S (the build flow measures and syncs them into
 
 ---
 
+
+
 ## Running locally
+
+
 
 ### Requirements
 
 - Docker (for the one-command demo), or Python 3.11 + Node 20 / pnpm for dev.
 - **No GPU and no model downloads** are needed for anything in this section.
+
+
 
 ### Demo plane
 
@@ -291,6 +318,8 @@ cd web && pnpm lint && pnpm build           # lint + typecheck + build
 
 ---
 
+
+
 ## Building engines
 
 Build the engines once on a GPU box (an EC2 GPU instance, or a Job on the EKS GPU
@@ -315,6 +344,8 @@ To train your own, add instance images under `pipelines/data/<name>/` (see
 [back to top](#readme-top)
 
 ---
+
+
 
 ## Deploying to EKS
 
@@ -350,6 +381,8 @@ you're not on Auto Mode.
 
 ---
 
+
+
 ## Benchmarking
 
 The whole point — `scripts/bench.py` fires N generations per variant at a chosen
@@ -376,6 +409,8 @@ network (port-forward adds jitter; run from inside the VPC for a clean wall-cloc
 
 ---
 
+
+
 ## License
 
 Distributed under the MIT License. See `[LICENSE](LICENSE)` for details.
@@ -383,6 +418,8 @@ Distributed under the MIT License. See `[LICENSE](LICENSE)` for details.
 ## Authors
 
 - **Aqil Marwan** — [@aqilmarwan](https://github.com/aqilmarwan)
+
+
 
 ## Credits
 
