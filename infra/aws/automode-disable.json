@@ -1,0 +1,6 @@
+{
+  "name": "quant-studio",
+  "computeConfig": { "enabled": false },
+  "kubernetesNetworkConfig": { "elasticLoadBalancing": { "enabled": false } },
+  "storageConfig": { "blockStorage": { "enabled": false } }
+}
