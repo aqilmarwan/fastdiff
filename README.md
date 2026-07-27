@@ -12,10 +12,10 @@
     <img src="https://img.shields.io/badge/TensorRT-10.3-76B900?style=flat-square&logo=nvidia&logoColor=ffffff" alt="TensorRT" /></a>
   <a href="https://nextjs.org/">
     <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=ffffff" alt="Next.js" /></a>
-  <a href="https://github.com/aqilmarwan/ptq-gpu/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/aqilmarwan/ptq-gpu?style=flat-square" alt="license" /></a>
+  <a href="https://github.com/aqilmarwan/fastdiff/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/aqilmarwan/fastdiff?style=flat-square" alt="license" /></a>
   <a href="">
-    <img src="https://img.shields.io/github/last-commit/aqilmarwan/ptq-gpu?style=flat-square" alt="last update" /></a>
+    <img src="https://img.shields.io/github/last-commit/aqilmarwan/fastdiff?style=flat-square" alt="last update" /></a>
   <h4>
     <a href="https://ptq-gpu.vercel.app">Live demo</a>
   </h4>
@@ -71,7 +71,7 @@
 
 ## Overview
 
-**ptq-gpu** exists to answer one question with real numbers: *what does quantising
+**fastdiff** exists to answer one question with real numbers: *what does quantising
 SDXL actually cost you, and what does it buy?* It serves the same SDXL 1.0 model as
 a matrix of **precision × style** TensorRT engines — FP16, INT8, FP8, each as Base
 or LoRA — and measures the tradeoff for each on **consistent, dedicated GPU

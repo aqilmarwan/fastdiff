@@ -211,7 +211,7 @@ class BuildFlow(FlowSpec):
     trials = Parameter("trials", default=3, help="Benchmark passes per variant (median is reported).")
     seed = Parameter("seed", default=1234, help="Base seed for reproducible benchmarks.")
     sync = Parameter("sync", is_flag=True, default=False, help="Write measured metrics back into variants.yaml.")
-    experiment = Parameter("experiment", default="ptq-gpu/sdxl-quant", help="MLflow experiment name.")
+    experiment = Parameter("experiment", default="fastdiff/sdxl-quant", help="MLflow experiment name.")
     engine_s3 = Parameter("engine-s3", default=os.getenv("STUDIO_ENGINE_S3_URI"),
                           help="s3:// URI to publish built engine bundles to (real plane).")
 

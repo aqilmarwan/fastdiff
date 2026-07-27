@@ -8,7 +8,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Quant Studio — SDXL inference, honestly measured",
+  title: "fastdiff — SDXL inference, honestly measured",
   description:
     "A production-inference image studio: pick a precision × style variant, generate on a real GPU, and watch latency, throughput and VRAM change. Compare quantised variants on one seed.",
 };

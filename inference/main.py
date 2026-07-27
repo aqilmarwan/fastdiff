@@ -1,4 +1,4 @@
-"""FastAPI entrypoint for the Image Gen Studio inference service.
+"""FastAPI entrypoint for the fastdiff inference service.
 
 Exposes exactly the two endpoints the frontend contract in `web/lib/types.ts`
 depends on, plus a health probe for Kubernetes:
@@ -39,7 +39,7 @@ logging.basicConfig(
 log = logging.getLogger("studio.main")
 
 app = FastAPI(
-    title="Image Gen Studio -- Inference",
+    title="fastdiff -- Inference",
     version="1.0.0",
     summary="Quantised SDXL variants, served with honest, server-side metrics.",
 )
@@ -63,7 +63,7 @@ log.info("Serving %d variants on the %r plane", len(registry.variants()), regist
 
 @app.get("/")
 def root() -> dict:
-    return {"service": "image-gen-studio-inference", "plane": registry.plane}
+    return {"service": "fastdiff-inference", "plane": registry.plane}
 
 
 @app.get("/healthz")

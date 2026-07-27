@@ -20,7 +20,7 @@ metadata:
   region: us-east-1
   version: "1.30"
   tags:
-    project: ptq-gpu
+    project: fastdiff
     app: quant-studio
 
 iam:

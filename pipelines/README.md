@@ -38,7 +38,7 @@ images under `pipelines/data/` (see `pipelines/data/README.md`).
 - `pipelines/out/registry.json` — measured metrics per variant (always written).
 - `inference/variants.yaml` — `registry:` blocks updated in place, comments
   preserved (only with `--sync`).
-- MLflow experiment `ptq-gpu/sdxl-quant` — one parent run per build, one nested
+- MLflow experiment `fastdiff/sdxl-quant` — one parent run per build, one nested
   run per variant.
 
 ## What's measured (real plane)

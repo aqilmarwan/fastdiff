@@ -1,6 +1,6 @@
-# web — Quant Studio frontend
+# web — fastdiff frontend
 
-The Next.js frontend for the Image Gen Studio. It calls the FastAPI inference
+The Next.js frontend for fastdiff. It calls the FastAPI inference
 service and **never bundles model code** — it only hits two endpoints:
 
 | Endpoint            | Used for                                             |

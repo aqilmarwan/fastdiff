@@ -241,7 +241,7 @@ function ResultCard({
           <IconBtn title="Regenerate" onClick={onRegenerate}><RotateCcw className="h-3.5 w-3.5" /></IconBtn>
           <a
             href={result.imageUrl}
-            download={`quantstudio-${variant.id}-${result.params.seed}.svg`}
+            download={`fastdiff-${variant.id}-${result.params.seed}.svg`}
             className="grid h-8 w-8 place-items-center rounded-lg border border-line text-muted transition-colors hover:border-line-strong hover:text-fg"
             title="Download"
           >

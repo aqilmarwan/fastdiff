@@ -9,7 +9,7 @@ export interface Handoff {
   variantId: string;
 }
 
-const KEY = "quantstudio:handoff";
+const KEY = "fastdiff:handoff";
 
 export function writeHandoff(h: Handoff): void {
   try {
