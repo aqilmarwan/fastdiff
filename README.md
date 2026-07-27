@@ -1,7 +1,10 @@
 <a id="readme-top"></a>
 
+<p align="center">
+  <img src="public/fastdiff.svg" alt="fastdiff" width="250" height=auto />
+</p>
+
 <div align="center">
-  <h1>ptq-gpu</h1>
   <p>Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — served as TensorRT engines on GPU.</p>
   <a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=ffffff" alt="Python" /></a>
