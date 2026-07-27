@@ -1,7 +1,7 @@
 <a id="readme-top"></a>
 
 <p align="center">
-  <img src="public/fastdiff-logo.svg" alt="fastdiff" width="250" height=auto />
+  <img src="public/fastdiff-logo.svg" alt="fastdiff" width="350" height=auto />
 </p>
 
 <div align="center">
