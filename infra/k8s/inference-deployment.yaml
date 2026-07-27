@@ -41,7 +41,11 @@ spec:
         - name: inference
           # CI overrides this with the ECR image via `kubectl set image`
           # (see .github/workflows/ci.yml); :latest is the manual fallback.
-          image: ECR_REGISTRY/quantstudio-inference:latest
+          # NOTE: this must be a valid image ref, not a placeholder -- `kubectl
+          # apply -f infra/k8s/` (no envsubst) creates a pod from it *before* the
+          # set-image step runs, so a placeholder like ECR_REGISTRY/... yields a
+          # stuck InvalidImageName pod that holds the GPU node.
+          image: 913488665670.dkr.ecr.ap-southeast-5.amazonaws.com/quantstudio-inference:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
