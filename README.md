@@ -1,8 +1,23 @@
-# ptq-gpu
+<a id="readme-top"></a>
 
-Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — served as TensorRT engines on real GPU hardware.
+<div align="center">
+  <h1>ptq-gpu</h1>
+  <p>Benchmarking the p95 latency, VRAM, and quality tradeoff of quantised SDXL — served as TensorRT engines on GPU.</p>
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=ffffff" alt="Python" /></a>
+  <a href="https://developer.nvidia.com/tensorrt">
+    <img src="https://img.shields.io/badge/TensorRT-10.3-76B900?style=flat-square&logo=nvidia&logoColor=ffffff" alt="TensorRT" /></a>
+  <a href="https://nextjs.org/">
+    <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=ffffff" alt="Next.js" /></a>
+  <a href="https://github.com/aqilmarwan/ptq-gpu/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/aqilmarwan/ptq-gpu?style=flat-square" alt="license" /></a>
+  <a href="">
+    <img src="https://img.shields.io/github/last-commit/aqilmarwan/ptq-gpu?style=flat-square" alt="last update" /></a>
+  <h4>
+    <a href="https://ptq-gpu.vercel.app">Live demo</a>
+  </h4>
+</div>
 
-#### [Live demo](https://ptq-gpu.vercel.app)
 
 > [!NOTE]
 > The **demo plane** runs the entire studio on CPU with **zero GPUs** — `docker compose up` and go. GPUs are only needed to build engines and to serve/benchmark the real (TensorRT) plane.
