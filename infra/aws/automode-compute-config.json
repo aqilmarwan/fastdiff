@@ -1,5 +1,0 @@
-{
-  "enabled": true,
-  "nodePools": ["general-purpose", "system"],
-  "nodeRoleArn": "arn:aws:iam::913488665670:role/ptq-gpu-automode-node"
-}
