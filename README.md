@@ -431,7 +431,7 @@ network (port-forward adds jitter; run from inside the VPC for a clean wall-cloc
 
 ## License
 
-Distributed under the MIT License. See `[LICENSE](https://github.com/aqilmarwan/fastdiff/blob/main/LICENSE)` for details.
+Distributed under the MIT License. See [LICENSE](https://github.com/aqilmarwan/fastdiff/blob/main/LICENSE) for details.
 
 ## Authors
 
