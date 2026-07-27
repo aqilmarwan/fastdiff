@@ -16,12 +16,18 @@ spec:
         role: gpu
     spec:
       requirements:
-        # Accept any of these single-GPU types so Auto Mode provisions whatever
-        # has capacity/quota. g5=A10G(24GB), g6=L4(24GB), g6e=L40S(48GB, FP8).
-        # FP8 isn't real yet, so A10G/L4 serve the FP16/INT8 variants fine.
+        # `role` must be a requirement (not just a template label) or Auto Mode's
+        # Karpenter reports "label role does not have known values" and won't match
+        # the pod's nodeSelector role=gpu.
+        - key: role
+          operator: In
+          values: ["gpu"]
+        # L40S (g6e) preferred for SDXL latency, A10G (g5) as fallback — g6e has
+        # thin capacity in ap-southeast-5. Both are far faster than the L4 (g6);
+        # L4 is deliberately excluded. Karpenter picks the cheapest available.
         - key: node.kubernetes.io/instance-type
           operator: In
-          values: ["g5.2xlarge", "g6.2xlarge", "g6e.2xlarge"]
+          values: ["g6e.2xlarge", "g5.2xlarge"]
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
