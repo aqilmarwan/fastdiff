@@ -32,7 +32,7 @@ export function Nav() {
             <Cpu className="h-4 w-4" strokeWidth={2.5} />
           </span>
           <span className="text-[15px] font-semibold tracking-tight">
-            Quant<span className="text-grad">Studio</span>
+            Fast<span className="text-grad">Diff</span>
           </span>
         </Link>
 
