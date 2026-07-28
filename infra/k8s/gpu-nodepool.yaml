@@ -2,32 +2,33 @@
 #
 # Your cluster is EKS Auto Mode, which provisions nodes from NodePools (Karpenter)
 # rather than the fixed managed node group in eksctl-cluster.yaml. This NodePool is
-# what lets the inference pod actually schedule: it launches L40S nodes labelled
-# `role: gpu` and tainted `nvidia.com/gpu`, matching the deployment's nodeSelector
-# + toleration. Auto Mode ships the NVIDIA driver, so no device plugin is needed.
+# what lets the inference pod get a GPU node: it launches g6 (L4, 24GB) nodes
+# tainted `nvidia.com/gpu`. The inference pod lands here purely via its
+# `nvidia.com/gpu` resource request + matching toleration - Auto Mode provisions
+# GPU nodes for that natively and ships the NVIDIA driver (no device plugin).
+#
+# Name is historical (there is no L40S in this region - see below); kept to avoid
+# churning the live NodePool.
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: gpu-l40s
 spec:
   template:
-    metadata:
-      labels:
-        role: gpu
     spec:
       requirements:
-        # `role` must be a requirement (not just a template label) or Auto Mode's
-        # Karpenter reports "label role does not have known values" and won't match
-        # the pod's nodeSelector role=gpu.
-        - key: role
-          operator: In
-          values: ["gpu"]
-        # L40S (g6e) preferred for SDXL latency, A10G (g5) as fallback — g6e has
-        # thin capacity in ap-southeast-5. Both are far faster than the L4 (g6);
-        # L4 is deliberately excluded. Karpenter picks the cheapest available.
+        # g6.2xlarge (L4) is the ONLY GPU instance type offered in ap-southeast-5.
+        # g6e (L40S) and g5 (A10G) are not available in this region at all
+        # (`aws ec2 describe-instance-type-offerings --region ap-southeast-5`), so
+        # they must not be listed here or Karpenter finds no launchable type and
+        # the pod stays Pending forever.
+        #
+        # No custom `role` label: EKS Auto Mode won't provision a new node for a
+        # label it doesn't manage ("label role does not have known values"). The
+        # nvidia.com/gpu request + taint toleration is what routes pods here.
         - key: node.kubernetes.io/instance-type
           operator: In
-          values: ["g6e.2xlarge", "g5.2xlarge"]
+          values: ["g6.2xlarge"]
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
@@ -43,7 +44,11 @@ spec:
         name: default          # Auto Mode's built-in NodeClass
       terminationGracePeriod: 24h0m0s
   limits:
-    cpu: "24"                  # ~3 g6e.2xlarge -> matches the inference HPA maxReplicas
+    # The "Running On-Demand G and VT instances" quota in ap-southeast-5 is 8 vCPU
+    # = exactly one g6.2xlarge. That hard cap is why the deployment uses the
+    # Recreate strategy (a rolling update would need a 2nd GPU node = 16 vCPU and
+    # could never surge). Request a quota increase to run >1 GPU node.
+    cpu: "8"
   disruption:
     consolidationPolicy: WhenEmpty
     consolidateAfter: 5m

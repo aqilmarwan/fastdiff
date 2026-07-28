@@ -6,9 +6,17 @@ metadata:
   labels: { app: inference }
 spec:
   replicas: 1
-  # A cold first deploy provisions a new GPU node + pulls the multi-GB image +
-  # syncs engines + inits CUDA/TRT, which exceeds the default 600s. Give it room.
-  progressDeadlineSeconds: 1200
+  # A cold deploy provisions a new GPU node + pulls the multi-GB image + syncs
+  # ~26GB of TensorRT engine bundles from S3 (init container) + inits CUDA/TRT.
+  # Measured end-to-end at ~18-20 min on a fresh g6 node, so give it 30 min of
+  # headroom. Keep the CI `rollout status --timeout` (ci.yml) >= this value.
+  progressDeadlineSeconds: 1800
+  # Recreate, not RollingUpdate: with replicas=1 a rolling update surges a 2nd
+  # pod that needs a 2nd GPU node live at the same time as the old one. g6e/g5
+  # capacity in ap-southeast-5 is thin, so that surge can stall indefinitely.
+  # Recreate tears the old pod down first, freeing its GPU for the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels: { app: inference }
   template:
@@ -18,9 +26,11 @@ spec:
       # S3 read access for the engine sync comes from this IRSA account
       # (created by eksctl; see infra/eksctl-cluster.yaml).
       serviceAccountName: inference
-      # schedule onto the GPU node group (label set in eksctl-cluster.yaml)
-      nodeSelector:
-        role: gpu
+      # GPU scheduling is driven by the nvidia.com/gpu request + toleration
+      # below, which EKS Auto Mode's Karpenter provisions natively from the
+      # gpu-l40s NodePool. A custom `role: gpu` nodeSelector does NOT work here:
+      # Auto Mode won't provision a new node for a custom label it doesn't
+      # manage ("label role does not have known values"), so it's omitted.
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
