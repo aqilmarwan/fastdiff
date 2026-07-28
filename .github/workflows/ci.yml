@@ -137,4 +137,7 @@ jobs:
             inference=$REGISTRY/quantstudio-inference:$TAG
 
       - name: Wait for rollout
-        run: kubectl -n quant-studio rollout status deployment/inference --timeout=22m
+        # Must be >= the deployment's progressDeadlineSeconds (1800s / 30m). A cold
+        # deploy provisions a fresh g6 node + pulls the image + syncs ~26GB of
+        # engines from S3 + inits CUDA/TRT, measured at ~18-20 min.
+        run: kubectl -n quant-studio rollout status deployment/inference --timeout=30m
