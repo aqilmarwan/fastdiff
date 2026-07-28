@@ -17,7 +17,7 @@
   <a href="">
     <img src="https://img.shields.io/github/last-commit/aqilmarwan/fastdiff?style=flat-square" alt="last update" /></a>
   <h4>
-    <a href="https://ptq-gpu.vercel.app">Live demo</a>
+    <a href="https://fastdiff.vercel.app">Live demo</a>
   </h4>
 </div>
 
