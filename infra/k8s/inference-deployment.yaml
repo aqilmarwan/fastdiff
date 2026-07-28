@@ -62,7 +62,7 @@ spec:
           env:
             # Only the web origin may call the API.
             - name: STUDIO_CORS_ORIGINS
-              value: "https://ptq-gpu.vercel.com"
+              value: "https://fastdiff.vercel.app"
             - name: STUDIO_ENGINE_DIR
               value: /engines
             # Keep 1 bundle hot — safe on a 24GB card (A10G/L4). Raise to 2 on L40S.

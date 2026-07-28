@@ -30,7 +30,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    - host: api.ptq-gpu.vercel.com   # replace example.com with your domain
+    - host: api.fastdiff.vercel.app   # the inference API subdomain (Vercel hosts the web at fastdiff.vercel.app)
       http:
         paths:
           - path: /
