@@ -1,0 +1,37 @@
+# fastdiff RunPod serverless worker - TensorRT 10.3 (matches the engines) + torch.
+#
+# Build context is the REPO ROOT. Build for linux/amd64 and push to a registry
+# RunPod can pull (Docker Hub / GHCR):
+#
+#   docker buildx build --platform linux/amd64 \
+#       -f serverless/Dockerfile.runpod \
+#       -t <registry>/fastdiff-runpod:latest --push .
+#
+# Then create a RunPod serverless endpoint from that image with an L40S GPU, a
+# network volume mounted at /runpod-volume, 1 active worker (keep-warm), and the
+# read-only S3 env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION).
+
+FROM nvcr.io/nvidia/tensorrt:24.08-py3
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    STUDIO_ENGINE_DIR=/runpod-volume/engines \
+    STUDIO_MAX_RESIDENT=1
+
+WORKDIR /app
+
+# Serving deps first (better layer caching). torch resolves its CUDA 12.x wheel;
+# transformers is only the offline CLIP tokenizer. runpod + boto3 for the worker.
+COPY inference/requirements.txt /app/inference/requirements.txt
+RUN pip3 install --upgrade pip && \
+    pip3 install -r /app/inference/requirements.txt \
+        "torch>=2.4" "transformers>=4.44" \
+        --extra-index-url https://download.pytorch.org/whl/cu124 && \
+    pip3 install "runpod>=1.6" "boto3>=1.34"
+
+COPY inference/ /app/inference/
+COPY serverless/runpod_handler.py /app/runpod_handler.py
+
+# RunPod serverless worker loop (starts the handler).
+CMD ["python3", "-u", "/app/runpod_handler.py"]
