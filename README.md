@@ -24,6 +24,7 @@
 
 > [!NOTE]
 > The **demo plane** runs the entire studio on CPU with **zero GPUs** — `docker compose up` and go. GPUs are only needed to build engines and to serve/benchmark the real (TensorRT) plane.
+> Huge migration has been done after few iterations of this project. Since AWS is new in ap-southeast-5, P and G GPU instances required for serving p95/p98 is limited.
 
 > [!WARNING]
 > **Status:** the **FP16** variants are validated end-to-end (build → serve → correct image → benchmark). **INT8** (entropy calibration) and **FP8** (ModelOpt Q/DQ) are in progress and currently build as FP16 fallbacks, so their latency numbers aren't yet distinct. The demo plane is what CI exercises.
