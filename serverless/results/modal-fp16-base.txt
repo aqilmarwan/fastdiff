@@ -1,44 +1,44 @@
 [modal] warming up (2 gens, discarded)...
-  warmup 1: 6.80s
-  warmup 2: 6.21s
+  warmup 1: 7.29s
+  warmup 2: 6.34s
 [modal] timing 20 gens @ 30 steps, 1024x1024, conc=1...
-   1/20: wall=5.67s
-   2/20: wall=5.78s
-   3/20: wall=6.02s
-   4/20: wall=7.38s
-   5/20: wall=5.75s
-   6/20: wall=5.98s
-   7/20: wall=5.64s
-   8/20: wall=5.74s
-   9/20: wall=13.12s
-  10/20: wall=5.69s
-  11/20: wall=5.79s
-  12/20: wall=7.98s
-  13/20: wall=5.95s
-  14/20: wall=6.04s
-  15/20: wall=6.02s
-  16/20: wall=5.95s
-  17/20: wall=5.94s
-  18/20: wall=6.05s
-  19/20: wall=5.97s
-  20/20: wall=6.10s
+   1/20: wall=5.76s
+   2/20: wall=6.07s
+   3/20: wall=5.72s
+   4/20: wall=5.79s
+   5/20: wall=5.76s
+   6/20: wall=5.69s
+   7/20: wall=5.66s
+   8/20: wall=5.81s
+   9/20: wall=5.72s
+  10/20: wall=5.85s
+  11/20: wall=5.98s
+  12/20: wall=6.33s
+  13/20: wall=5.91s
+  14/20: wall=6.54s
+  15/20: wall=5.66s
+  16/20: wall=5.78s
+  17/20: wall=6.06s
+  18/20: wall=5.84s
+  19/20: wall=5.86s
+  20/20: wall=5.74s
 
 ===== modal :: fp16-base @ 30 steps, N=20, conc=1 =====
 metric                       p50       p95       p99      mean       min       max
 ----------------------------------------------------------------------------------
-wall total (s)              5.96      8.24     12.14      6.43      5.64     13.12
-server total (s)            2.58      2.61      2.65      2.58      2.55      2.66
-  denoise (s)               2.48      2.52      2.56      2.48      2.45      2.57
+wall total (s)              5.80      6.34      6.50      5.88      5.66      6.54
+server total (s)            2.59      2.62      2.62      2.59      2.56      2.62
+  denoise (s)               2.49      2.52      2.52      2.49      2.46      2.52
   vae decode (s)            0.10      0.10      0.10      0.10      0.10      0.10
   cold load (s)             0.00      0.00      0.00      0.00      0.00      0.00
-throughput (steps/s)       12.11     12.21     12.23     12.09     11.68     12.23
+throughput (steps/s)       12.05     12.17     12.19     12.05     11.89     12.20
 VRAM peak (GB)              0.02      0.02      0.02      0.02      0.02      0.02
 
 ----- cost (L40S @ $1.95/hr = $0.5417/1000 GPU-s) -----
   (GPU is busy one request at a time, so cost/gen = gen wall-time x rate)
-  $ / generation   p50 : $0.0032   (p95 $0.0045)
-  $ / 1000 gens    p50 : $3.23   (p95 $4.46)
-  images / GPU-hour p50: 604   (mean 560)
+  $ / generation   p50 : $0.0031   (p95 $0.0034)
+  $ / 1000 gens    p50 : $3.14   (p95 $3.44)
+  images / GPU-hour p50: 621   (mean 613)
   keep-warm idle cost  : $1.95/hr = $46.80/day per warm container
 
   note: --price-per-hour to set the exact live rate; server total is the honest
