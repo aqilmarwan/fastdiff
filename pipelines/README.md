@@ -24,7 +24,7 @@ pip install -r pipelines/requirements.txt
 # laptop / CI — simulated, no GPU, does not touch variants.yaml
 python pipelines/build_flow.py run --demo
 
-# real GPU box (EC2 GPU, or a Job on the EKS GPU node) — build + publish to S3
+# real L40S GPU box — build + publish to S3 (engines are device-specific)
 pip install -r inference/requirements.txt -r inference/requirements-gpu.txt
 python pipelines/build_flow.py run --trials 5 --sync --engine-s3 s3://<bucket>
 ```
