@@ -1,13 +1,8 @@
 name: CI
 
-# test -> build inference image -> push ECR -> deploy EKS
-#
-# Web is on Vercel; only the inference service is built + deployed here.
-# Tests run on every push/PR. Build + deploy run only for pushes to main and
-# require these repo settings:
-#   Secrets:  AWS_DEPLOY_ROLE_ARN   (IAM role trusted for GitHub OIDC)
-#   Vars:     AWS_REGION, ECR_REGISTRY (<acct>.dkr.ecr.<region>.amazonaws.com),
-#             EKS_CLUSTER
+# Tests only. The inference service runs on Modal serverless (deployed manually
+# with `modal deploy serverless/modal_app.py`); the web app is on Vercel. Neither
+# is built or deployed from CI, so there are no cloud credentials here.
 
 on:
   push:
@@ -61,83 +56,3 @@ jobs:
         run: pnpm build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
-
-  # -------------------------------------------------- build & push to ECR ----
-  build:
-    needs: [inference, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write   # federate into AWS via OIDC
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-        # NOTE: the quantstudio-inference ECR repo must exist. Create it once
-        # (the CI role has push perms, not create):
-        #   aws ecr create-repository --repository-name quantstudio-inference --region <region>
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build & push inference image (GPU target)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile.inference
-          target: gpu
-          push: true
-          tags: |
-            ${{ vars.ECR_REGISTRY }}/quantstudio-inference:${{ github.sha }}
-            ${{ vars.ECR_REGISTRY }}/quantstudio-inference:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      # Web is hosted on Vercel, so no web image is built/deployed here.
-
-  # --------------------------------------------------------- deploy EKS ------
-  deploy:
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --name ${{ vars.EKS_CLUSTER }} --region ${{ vars.AWS_REGION }}
-
-      - name: Apply manifests
-        # Namespace first: `kubectl apply -f <dir>` orders files alphabetically,
-        # so namespace.yaml would otherwise run after the namespaced resources.
-        run: |
-          kubectl apply -f infra/k8s/namespace.yaml
-          kubectl apply -f infra/k8s/
-
-      - name: Roll out the freshly built image
-        env:
-          REGISTRY: ${{ vars.ECR_REGISTRY }}
-          TAG: ${{ github.sha }}
-        run: |
-          kubectl -n quant-studio set image deployment/inference \
-            inference=$REGISTRY/quantstudio-inference:$TAG
-
-      - name: Wait for rollout
-        # Must be >= the deployment's progressDeadlineSeconds (1800s / 30m). A cold
-        # deploy provisions a fresh g6 node + pulls the image + syncs ~26GB of
-        # engines from S3 + inits CUDA/TRT, measured at ~18-20 min.
-        run: kubectl -n quant-studio rollout status deployment/inference --timeout=30m
