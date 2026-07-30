@@ -52,7 +52,7 @@
 
 [Building engines](#building-engines)
 
-[Deploying to EKS](#deploying-to-eks)
+[Deploying to Modal](#deploying-to-modal)
 
 [Benchmarking](#benchmarking)
 
@@ -83,11 +83,12 @@ Latency is the deliverable, so two things matter:
 - **The engines are prebuilt TensorRT** `.plan` **files.** There is no Hugging Face or
 `diffusers` at serving time — the text encoders, UNet, and VAE run as engines and
 the scheduler is vendored. That strips framework overhead out of the measurement.
-- **It runs on a pinned GPU (EKS), not a serverless pool.** One dedicated card gives
-reproducible p95 instead of run-to-run allocation variance.
+- **It runs on a warm, pinned L40S (Modal serverless, `min_containers=1`).** One
+dedicated, always-warm card gives reproducible p95 instead of cold-start and
+run-to-run allocation variance.
 
 A web studio (studio + compare pages) streams generations over SSE and renders the
-metrics side by side; `scripts/bench.py` produces the percentile tables.
+metrics side by side; `serverless/bench_compare.py` produces the percentile tables.
 
 [back to top](#readme-top)
 
@@ -97,8 +98,8 @@ metrics side by side; `scripts/bench.py` produces the percentile tables.
 
 ## How it works
 
-The system is four stages — **build** engines offline, **deploy** the image via
-CI/CD, **serve** on a pinned GPU, and **benchmark**:
+The system is three stages — **build** engines offline, **serve** them on a warm
+L40S (Modal serverless), and **benchmark**:
 
 ```mermaid
 flowchart TB
@@ -117,36 +118,26 @@ flowchart TB
         fuseLora --> onnx --> trt --> bundle --> s3
     end
 
-    subgraph deploy["Deploy pipeline — CI/CD (.github/workflows/ci.yml)"]
+    subgraph serve["Serve — Modal serverless, warm L40S (min_containers=1)"]
         direction TB
-        push["git push (main)"]
-        test["test: pytest (demo plane) + web lint/build"]
-        image["build Dockerfile.inference (TRT 10.3)"]
-        ecr[("ECR<br/>inference image")]
-        rollout["kubectl set image + rollout"]
+        sync["sync_engines: S3 → Modal Volume<br/>(once per engine)"]
+        deploy["modal deploy → ASGI endpoint"]
+        pod["warm container<br/>FastAPI + TensorRTBackend"]
 
-        push --> test --> image --> ecr --> rollout
-    end
-
-    subgraph serve["Serve pipeline — EKS Auto Mode, one GPU node"]
-        direction TB
-        init["init container: aws s3 sync to /engines"]
-        pod["inference pod<br/>FastAPI + TensorRTBackend"]
-
-        init --> pod
+        sync --> pod
+        deploy --> pod
     end
 
     subgraph clients["Clients"]
         direction TB
         web["Web studio (Vercel)"]
-        bench["scripts/bench.py"]
+        bench["serverless/bench_compare.py"]
     end
 
-    s3 --> init
-    rollout --> pod
+    s3 --> sync
     web -->|"POST /generate (SSE)"| pod
-    bench -->|"N requests @ concurrency"| pod
-    pod -->|"p50 / p95 / p99"| bench
+    bench -->|"N requests @ conc=1"| pod
+    pod -->|"p50 / p95 / p99 + $/gen"| bench
 ```
 
 
@@ -197,14 +188,14 @@ stateDiagram-v2
 `TensorRTBackend` keeps an LRU set of  
 engine bundles hot in VRAM (`max_resident`), runs the denoise loop, and measures  
 cold-load / denoise / VAE latency, throughput, and peak VRAM around the real work.  
-Engine bundles are synced from S3 into the pod by an init container — nothing is  
-downloaded from Hugging Face at request time. A single `POST /generate` on the  
-real plane flows like this:
+Engine bundles are synced once from S3 into the Modal Volume the warm container  
+mounts — nothing is downloaded from Hugging Face at request time. A single  
+`POST /generate` on the real plane flows like this:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as Client (web / bench.py)
+    participant C as Client (web / bench_compare.py)
     participant API as FastAPI (main.py)
     participant B as TensorRTBackend
     participant E as TRT engines (VRAM)
@@ -244,7 +235,7 @@ flowchart LR
     hf["HF weights<br/>(once)"] --> onnx["ONNX export<br/>build_engines.py"]
     onnx --> trt["TensorRT engine<br/>fp16 / int8 / fp8"]
     trt --> s3[("publish to S3")]
-    s3 --> sync["serving pod syncs<br/>bundles to /engines"]
+    s3 --> sync["Modal warm container<br/>mounts bundles from Volume"]
 ```
 
 
@@ -254,11 +245,12 @@ CUDA GPU. Only the UNet is quantised; the VAE (fp16-fix) and text encoders stay 
 
 ### Infrastructure
 
-Serving runs on **EKS Auto Mode**: a NodePool provisions a single GPU node, the
-inference pod syncs its engines from S3 on startup (S3 read via **Pod Identity**),
-and it's reached over a ClusterIP service — port-forwarded for benchmarking, or
-fronted by the ALB + TLS ingress (`infra/ingress.yaml`) for a public domain. One
-dedicated card = reproducible latency. The web app is hosted separately on Vercel.
+Serving runs on **Modal serverless**: a warm L40S container (`min_containers=1`)
+mounts the engine bundles from a Modal Volume (synced once from S3) and serves the
+FastAPI app as an HTTPS ASGI endpoint. One dedicated, pinned card = reproducible
+latency, with no cluster, GPU quota, or image registry to manage. The web app is
+hosted separately on Vercel. `serverless/runpod_handler.py` is an equivalent RunPod
+deployment reading the same engines from S3.
 
 [back to top](#readme-top)
 
@@ -341,9 +333,10 @@ cd web && pnpm lint && pnpm build           # lint + typecheck + build
 
 ## Building engines
 
-Build the engines once on a GPU box (an EC2 GPU instance, or a Job on the EKS GPU
-node), publish to S3, then point the serving pod at the bucket. Building isn't
-latency-sensitive, so any CUDA GPU works:
+Build the engines once on any L40S GPU box, publish to S3, then point the serving
+plane at the bucket (Modal syncs them into its Volume). Building isn't
+latency-sensitive, but the `.plan` files are device-specific — build on the same
+GPU class you serve on (L40S):
 
 ```bash
 pip install -r pipelines/requirements.txt -r inference/requirements.txt -r inference/requirements-gpu.txt
@@ -366,35 +359,30 @@ To train your own, add instance images under `pipelines/data/<name>/` (see
 
 
 
-## Deploying to EKS
+## Deploying to Modal
 
-Serving runs on **EKS Auto Mode** for pinned, reproducible latency. CI builds the
-inference image, pushes to ECR, and rolls out the deployment. Full bring-up is in
-`[infra/README.md](infra/README.md)`; the essentials:
+Serving runs on **Modal serverless** on an **L40S**, kept warm (`min_containers=1`)
+for a stable p95. Modal supplies the GPU and a persistent Volume for the engines;
+the FastAPI app from `inference/main.py` is served verbatim as a Modal ASGI
+endpoint (`serverless/modal_app.py`). No cluster, no quota, no image registry.
 
 ```bash
-# 1. GPU node (Auto Mode NodePool) + the inference ServiceAccount
-kubectl apply -f infra/k8s/gpu-nodepool.yaml
+# 1. one-time: store a read-only S3 key so Modal can pull the engines
+modal secret create aws-s3-readonly \
+  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=ap-southeast-5
 
-# 2. S3 read for the engine sync (EKS Pod Identity)
-aws iam create-role --role-name ptq-gpu-inference-s3 \
-  --assume-role-policy-document file://infra/aws/inference-s3-trust.json
-aws iam put-role-policy --role-name ptq-gpu-inference-s3 --policy-name s3-read \
-  --policy-document file://infra/aws/inference-s3-policy.json
-aws eks create-pod-identity-association --cluster-name <cluster> \
-  --namespace quant-studio --service-account inference --role-arn <role-arn>
+# 2. one-time per engine: sync the .plan bundle from S3 into the Modal Volume
+modal run serverless/modal_app.py::sync_engines --engine fp16-base
 
-# 3. push → CI builds the inference image → ECR → deploy + rollout
-git push
+# 3. deploy the warm endpoint (prints the https URL)
+modal deploy serverless/modal_app.py
 ```
 
-> [!IMPORTANT]
-> Launching GPU instances needs a non-zero **G-class vCPU quota** (`L-DB2E81BA`).
-> Fresh AWS accounts start at **0** — request an increase (8 vCPUs = one `.2xlarge`
-> = one GPU, which is all this project needs) before the pod can schedule.
-
-`eksctl-cluster.yaml` + `bootstrap.sh` are an alternative managed-nodegroup path if
-you're not on Auto Mode.
+> [!NOTE]
+> The engines are TensorRT `.plan` files built for the **L40S**, so serving pins
+> L40S (or L40 — same Ada arch). A different GPU class runs a slow, wrong-device
+> fallback. `serverless/runpod_handler.py` is an equivalent RunPod deployment that
+> pulls the same engines from S3.
 
 [back to top](#readme-top)
 
@@ -404,13 +392,14 @@ you're not on Auto Mode.
 
 ## Benchmarking
 
-The whole point — `scripts/bench.py` fires N generations per variant at a chosen
-concurrency and reports p50/p95/p99 of both the end-to-end wall time and the
-server-measured denoise time (network-independent):
+The whole point — `serverless/bench_compare.py` fires N generations against the
+warm endpoint and reports p50/p95/p99 of the end-to-end wall time and the
+server-measured denoise time (network-independent), plus a derived $/generation:
 
 ```bash
-kubectl -n quant-studio port-forward svc/inference 8000:80 &
-python3 scripts/bench.py http://localhost:8000 --variants fp16-base,int8-base -n 50 -c 4
+URL=https://<your-app>.modal.run
+python3 -u serverless/bench_compare.py --url $URL --label modal \
+  --variant fp16-base --n 20 --steps 30 --gpu L40S --price-per-hour 1.95
 ```
 
 ```text
