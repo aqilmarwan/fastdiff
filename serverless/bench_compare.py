@@ -28,7 +28,32 @@ import json
 import os
 import statistics
 import time
+import urllib.error
 import urllib.request
+
+
+def _open(req: urllib.request.Request, timeout: int = 60, retries: int = 5):
+    """urlopen that surfaces error bodies and rides out transient 5xx / network blips.
+
+    RunPod's status API intermittently returns 500s; a benchmark shouldn't die on
+    one. Retries 5xx and connection errors with linear backoff, surfaces 4xx (auth,
+    bad request) immediately with the server's body.
+    """
+    for attempt in range(retries + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", "replace")[:500]
+            if exc.code >= 500 and attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise RuntimeError(f"HTTP {exc.code} {exc.reason} from {req.full_url} :: {body}") from None
+        except (urllib.error.URLError, TimeoutError) as exc:
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise RuntimeError(f"network error to {req.full_url}: {exc}") from None
+    raise RuntimeError(f"exhausted {retries} retries to {req.full_url}")
 
 # Rough per-hour GPU rates ($/hr) for the derived cost; override with --price-per-hour.
 # Modal on-demand, mid-2026 (confirm against the live pricing page).
@@ -79,13 +104,13 @@ def one_generation_runpod(endpoint_id: str, api_key: str, variant: str, steps: i
     submit = urllib.request.Request(
         base + "/run", data=json.dumps({"input": _payload(variant, steps, seed)}).encode(), headers=headers
     )
-    with urllib.request.urlopen(submit, timeout=60) as r:
+    with _open(submit, timeout=60) as r:
         job_id = json.loads(r.read())["id"]
 
     status: dict = {}
     while True:
         poll = urllib.request.Request(base + f"/status/{job_id}", headers=headers)
-        with urllib.request.urlopen(poll, timeout=60) as r:
+        with _open(poll, timeout=60) as r:
             status = json.loads(r.read())
         st = status.get("status")
         if st == "COMPLETED":
