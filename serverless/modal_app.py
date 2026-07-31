@@ -103,9 +103,13 @@ def sync_engines(engine: str = "fp16-base") -> None:
     gpu="L40S",
     volumes={ENGINE_MOUNT: engines},
     min_containers=1,      # keep one warm -> stable warm p95 (the benchmark's point)
-    scaledown_window=300,  # if we ever allow >1, idle extras die after 5 min
+    max_containers=1,      # pin to ONE container: no cold scale-out, no per-request
+                           # engine re-deserialize. A latency benchmark on "one
+                           # dedicated GPU" must not bounce across cold containers.
+    scaledown_window=300,
     timeout=600,
 )
+@modal.concurrent(max_inputs=1)  # one gen at a time (the TRT context is single-threaded)
 class Inference:
     @modal.enter()
     def warm(self) -> None:
