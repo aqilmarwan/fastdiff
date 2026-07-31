@@ -2,7 +2,7 @@
 
 Reuses inference/main.py's FastAPI app verbatim. Modal only supplies the L40S GPU,
 a warm container (min_containers=1) for a stable p95, and the prebuilt engine
-bundles on a persistent Volume. HF-free at serve time, exactly like the EKS plane.
+bundles on a persistent Volume. HF-free at serve time - engines run as .plan files.
 
 Run everything from the REPO ROOT (paths below are repo-relative):
 

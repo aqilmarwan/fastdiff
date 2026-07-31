@@ -2,7 +2,7 @@
 
 Mirrors the SSE /generate contract as a RunPod generator handler: it yields the
 same status / progress / done / error events, and reuses inference/pipelines.py's
-Registry so the measured metrics match the Modal and EKS planes exactly.
+Registry so the measured metrics match the Modal plane exactly.
 
 Design note: ALL failable work (S3 sync, torch/TRT import, Registry init) happens
 lazily on the first job, not at module import. That way the serverless worker
