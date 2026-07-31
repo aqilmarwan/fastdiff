@@ -169,6 +169,7 @@ def main() -> None:
         default=None,
         help="GPU $/hr for cost derivation (defaults by --gpu)",
     )
+    ap.add_argument("--out", help="write raw samples + summary to this JSON (for plot_bench.py)")
     args = ap.parse_args()
 
     rate_hr = args.price_per_hour if args.price_per_hour is not None else DEFAULT_RATES.get(args.gpu, 1.95)
@@ -248,6 +249,28 @@ def main() -> None:
     print(f"  keep-warm idle cost  : ${rate_hr:.2f}/hr = ${rate_hr * 24:.2f}/day per warm container")
     print("\n  note: --price-per-hour to set the exact live rate; server total is the honest")
     print("  GPU-busy time, wall total includes network RTT to the endpoint.")
+
+    if args.out:
+        payload = {
+            "label": args.label,
+            "variant": args.variant,
+            "steps": args.steps,
+            "n": len(series["wall_s"]),
+            "gpu": args.gpu,
+            "rate_hr": rate_hr,
+            "series": series,
+            "summary": {k: summarize(v) for k, v in series.items()},
+            "cost": {
+                "per_gen_p50": wall["p50"] * rate_s,
+                "per_gen_p95": wall["p95"] * rate_s,
+                "per_1000_p50": wall["p50"] * rate_s * 1000,
+                "images_per_hour_p50": 3600 / wall["p50"] if wall["p50"] else float("nan"),
+                "warm_per_day": rate_hr * 24,
+            },
+        }
+        with open(args.out, "w") as fh:
+            json.dump(payload, fh, indent=2)
+        print(f"\n  wrote raw results -> {args.out}")
 
 
 if __name__ == "__main__":
