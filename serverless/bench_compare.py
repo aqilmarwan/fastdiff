@@ -60,6 +60,11 @@ def _open(req: urllib.request.Request, timeout: int = 60, retries: int = 5):
 DEFAULT_RATES = {"L40S": 1.95, "A100": 2.50, "A100-80GB": 3.95, "H100": 4.90, "L4": 0.80}
 
 
+# RunPod's proxy is fronted by Cloudflare, which 403s the default Python-urllib
+# user-agent as a bot. Present a browser-like UA so requests get through.
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) fastdiff-bench/1.0"
+
+
 def _payload(variant: str, steps: int, seed: int) -> dict:
     return {
         "prompt": "a lighthouse at dusk, dramatic sky",
@@ -75,11 +80,12 @@ def one_generation_sse(url: str, variant: str, steps: int, seed: int) -> tuple[f
     """Modal / any SSE endpoint: stream /generate, return (wall_s, metrics)."""
     body = json.dumps(_payload(variant, steps, seed)).encode()
     req = urllib.request.Request(
-        url.rstrip("/") + "/generate", data=body, headers={"Content-Type": "application/json"}
+        url.rstrip("/") + "/generate", data=body,
+        headers={"Content-Type": "application/json", "User-Agent": UA},
     )
     t0 = time.time()
     metrics: dict = {}
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    with _open(req, timeout=600) as resp:
         for raw in resp:
             line = raw.decode("utf-8")
             if not line.startswith("data:"):
@@ -98,7 +104,7 @@ def one_generation_sse(url: str, variant: str, steps: int, seed: int) -> tuple[f
 def one_generation_runpod(endpoint_id: str, api_key: str, variant: str, steps: int, seed: int) -> tuple[float, dict]:
     """RunPod serverless: submit /run, poll /status, return (wall_s, metrics)."""
     base = f"https://api.runpod.ai/v2/{endpoint_id}"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": UA}
     t0 = time.time()
 
     submit = urllib.request.Request(
