@@ -402,15 +402,39 @@ python3 -u serverless/bench_compare.py --url $URL --label modal \
   --variant fp16-base --n 20 --steps 30 --gpu L40S --price-per-hour 1.95
 ```
 
-```text
-variant        n   cold   wall p50   p95   p99   denoise p50   p95    vram
-fp16-base     50   4200      2100  2400  2600         1850  1980    18.4
-int8-base     50   3100      1400  1600  1750         1180  1290    11.2
+### Modal vs RunPod - L40S, fp16-base, 30 steps, N=20, warm, concurrency 1
+
+<p align="center">
+  <img src="public/serverless-benchmark.png" alt="Modal vs RunPod L40S serverless benchmark" width="100%" />
+</p>
+
+| metric | Modal (serverless) | RunPod (Pod) |
+| --- | --- | --- |
+| GPU latency (server-measured) p50 / p95 | 2.74s / 2.75s | 2.71s / 2.75s |
+| denoise p50 | 2.64s | 2.62s |
+| throughput (mean) | 11.4 steps/s | 11.5 steps/s |
+| wall p50 / p95 | 6.9s / 10.7s | 4.1s / 4.7s |
+| cost / 1000 images (p50) | $3.75 | **$0.90** |
+| keep-warm / day | $46.80 @ $1.95/hr | **$18.96** @ $0.79/hr |
+
+**Same GPU, same compute.** The server-measured denoise time is identical (~2.7s,
+~11.4 steps/s) - as it must be, since both run the same L40S engine. The platforms
+diverge on **cost** (RunPod ~76% cheaper at these rates) and **developer experience**
+(Modal deployed in one command; RunPod took real operational effort to stand up).
+Read the **server / denoise** rows for hardware-clean numbers - `wall` includes
+network RTT and depends on region, so it is not a fair GPU comparison.
+
+Reproduce both and regenerate the figure:
+
+```bash
+python3 serverless/bench_compare.py --url https://<modal-app>.modal.run \
+  --label modal --gpu L40S --price-per-hour 1.95 --out serverless/modal.json
+python3 serverless/bench_compare.py --url https://<pod-id>-8000.proxy.runpod.net \
+  --label runpod --gpu L40S --price-per-hour 0.79 --out serverless/runpod.json
+python3 serverless/plot_bench.py --in serverless/modal.json serverless/runpod.json \
+  --out public/serverless-benchmark.png
 ```
 
-Concurrency (`-c`) drives load so p95/p99 reflect real queueing, not a quiet single
-stream. Read the **denoise** columns for hardware-clean numbers — `wall` includes
-network (port-forward adds jitter; run from inside the VPC for a clean wall-clock).
 `scripts/generate.py` is a one-shot generate-and-save for a quick endpoint check.
 
 [back to top](#readme-top)
