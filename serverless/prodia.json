@@ -1,0 +1,34 @@
+{
+  "label": "prodia",
+  "variant": "sdxl-base",
+  "steps": 30,
+  "n": 2,
+  "gpu": "prodia-api",
+  "rate_hr": null,
+  "series": {
+    "wall_s": [
+      16.96600890159607,
+      6.472625970840454
+    ]
+  },
+  "summary": {
+    "wall_s": {
+      "p50": 11.719317436218262,
+      "p95": 16.441339755058287,
+      "p99": 16.861075072288514,
+      "mean": 11.719317436218262,
+      "min": 6.472625970840454,
+      "max": 16.96600890159607
+    }
+  },
+  "success_rate": 0.05,
+  "effective_success_rate": 0.1,
+  "fallback_success_rate": null,
+  "attempts": 20,
+  "retries": 3,
+  "cost": {
+    "per_1000_p50": 1.0,
+    "per_gen_p50": 0.001,
+    "warm_per_day": null
+  }
+}
