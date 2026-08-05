@@ -375,6 +375,140 @@ def _trt_available() -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Diffusers backend (PyTorch reference -- the framework-overhead baseline)
+# --------------------------------------------------------------------------- #
+
+
+class DiffusersBackend:
+    """Reference SDXL via diffusers (PyTorch) - the baseline the TRT plane is
+    measured against. Runs un-quantised fp16 SDXL with a switchable attention
+    implementation (config.ATTENTION), so you can measure both the flash-attention
+    win (vanilla vs sdpa) and the diffusers-vs-TensorRT gap.
+
+    It ignores per-variant precision - it is always the fp16 reference - but keeps
+    the exact same emit()/GenOutput contract as TensorRTBackend, so bench_compare.py
+    and the web UI treat it identically. Matches the TRT plane's model choices:
+    fp16-fix VAE + an Euler scheduler.
+    """
+
+    plane = "diffusers"
+
+    def __init__(self, base_model: str, attention: str = "sdpa") -> None:
+        self.base_model = base_model
+        self.attention = (attention or "sdpa").lower()
+        self._pipe = None  # loaded lazily on first generate
+
+    def is_resident(self, variant_id: str) -> bool:
+        return self._pipe is not None
+
+    def _apply_attention(self, pipe) -> None:
+        from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0
+
+        if self.attention == "xformers":
+            pipe.enable_xformers_memory_efficient_attention()
+        elif self.attention == "vanilla":
+            pipe.unet.set_attn_processor(AttnProcessor())      # naive: no fusion, no flash
+        else:  # sdpa / flash -> torch SDPA, which uses the flash-attention kernel
+            pipe.unet.set_attn_processor(AttnProcessor2_0())
+        log.info("diffusers attention = %s", self.attention)
+
+    def _load(self):
+        import torch
+        from diffusers import AutoencoderKL, EulerDiscreteScheduler, StableDiffusionXLPipeline
+
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            self.base_model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16",
+        )
+        # Match the TRT plane: fp16-fix VAE (stock SDXL VAE overflows in fp16) + Euler.
+        pipe.vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
+        pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config)
+        pipe = pipe.to("cuda")
+        pipe.set_progress_bar_config(disable=True)
+        self._apply_attention(pipe)
+        return pipe
+
+    def generate(self, variant: Variant, serving: Serving, params: GenerationParams, emit: Emit) -> GenOutput:
+        import contextlib
+
+        import torch
+
+        cold_before = self._pipe is None
+        emit({
+            "type": "status", "stage": "load", "cold": cold_before,
+            "message": (f"Loading SDXL (diffusers, attention={self.attention})..." if cold_before
+                        else "diffusers pipeline resident -- warm start"),
+        })
+        t0 = time.perf_counter()
+        if self._pipe is None:
+            self._pipe = self._load()
+            cuda_sync()
+        cold_ms = (time.perf_counter() - t0) * 1000.0 if cold_before else 0.0
+        pipe = self._pipe
+
+        reset_peak_vram()
+        gen = torch.Generator(device="cuda").manual_seed(int(params.seed))
+
+        def _cb(_pipe, step, _timestep, kwargs):
+            emit({"type": "progress", "step": step + 1, "totalSteps": params.steps})
+            return kwargs
+
+        # "flash" forces the flash SDPA kernel (efficient fallback if a layer can't use it).
+        sdpa_ctx = contextlib.nullcontext()
+        if self.attention == "flash":
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+            sdpa_ctx = sdpa_kernel([SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION])
+
+        # --- denoise (text encode + loop, no VAE) ---------------------------
+        emit({"type": "status", "stage": "denoise", "message": "Running denoising loop...", "cold": cold_before})
+        cuda_sync()
+        denoise_start = time.perf_counter()
+        with torch.inference_mode(), sdpa_ctx:
+            latents = pipe(
+                prompt=params.prompt,
+                negative_prompt=params.negative_prompt or None,
+                num_inference_steps=params.steps,
+                guidance_scale=params.guidance,
+                width=params.width,
+                height=params.height,
+                generator=gen,
+                output_type="latent",
+                callback_on_step_end=_cb,
+            ).images
+        cuda_sync()
+        denoise_ms = (time.perf_counter() - denoise_start) * 1000.0
+
+        # --- VAE decode -----------------------------------------------------
+        emit({"type": "status", "stage": "decode", "message": "VAE decoding latents...", "cold": cold_before})
+        vae_start = time.perf_counter()
+        with torch.inference_mode():
+            image_t = pipe.vae.decode(latents / pipe.vae.config.scaling_factor, return_dict=False)[0]
+        cuda_sync()
+        vae_ms = (time.perf_counter() - vae_start) * 1000.0
+
+        image = _tensor_to_image(image_t)
+        throughput = params.steps / (denoise_ms / 1000.0) if denoise_ms > 0 else 0.0
+        return GenOutput(
+            image_url=_img_to_data_url(image),
+            cold=cold_before,
+            cold_load_ms=round(cold_ms),
+            denoise_ms=round(denoise_ms),
+            vae_ms=round(vae_ms),
+            total_ms=round(cold_ms + denoise_ms + vae_ms),
+            vram_peak_gb=peak_vram_gb(),
+            throughput=round(throughput, 2),
+        )
+
+
+def _diffusers_available() -> bool:
+    try:
+        import diffusers  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+# --------------------------------------------------------------------------- #
 # Registry
 # --------------------------------------------------------------------------- #
 
@@ -416,8 +550,13 @@ class Registry:
             )
         self._by_id = {v.id: v for v in self._variants}
 
-        use_real = not config.FORCE_DEMO and cuda_available() and _trt_available()
-        if use_real:
+        base_model = doc.get("base_model", "stabilityai/stable-diffusion-xl-base-1.0")
+        use_gpu = not config.FORCE_DEMO and cuda_available()
+        want_diffusers = config.BACKEND == "diffusers"
+        if use_gpu and want_diffusers and _diffusers_available():
+            log.info("Diffusers backend (PyTorch baseline, attention=%s)", config.ATTENTION)
+            self.backend = DiffusersBackend(base_model, attention=config.ATTENTION)
+        elif use_gpu and not want_diffusers and _trt_available():
             log.info("CUDA + TensorRT detected -- using TensorRTBackend (real metrics)")
             self.backend = TensorRTBackend(config.ENGINE_DIR, max_resident)
         else:
@@ -425,6 +564,8 @@ class Registry:
                 reason = "STUDIO_DEMO set"
             elif not cuda_available():
                 reason = "no CUDA device"
+            elif want_diffusers:
+                reason = "diffusers not importable"
             else:
                 reason = "tensorrt not importable"
             log.warning("DEMO plane (%s) -- metrics are simulated, not measured", reason)
