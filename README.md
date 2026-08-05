@@ -83,7 +83,7 @@ Latency is the deliverable, so two things matter:
 - **The engines are prebuilt TensorRT** `.plan` **files.** There is no Hugging Face or
 `diffusers` at serving time — the text encoders, UNet, and VAE run as engines and
 the scheduler is vendored. That strips framework overhead out of the measurement.
-- **It runs on a warm, pinned L40S (Modal serverless, `min_containers=1`).** One
+- **It runs on a warm, pinned L40S (Modal serverless,** `min_containers=1`**).** One
 dedicated, always-warm card gives reproducible p95 instead of cold-start and
 run-to-run allocation variance.
 
@@ -180,9 +180,7 @@ stateDiagram-v2
 `inference/` is a FastAPI service exposing three endpoints :- 
 
 - `GET /variants`
-
 - `POST /generate` (SSE)
-
 - `GET /healthz`
 
 `TensorRTBackend` keeps an LRU set of  
@@ -402,20 +400,28 @@ python3 -u serverless/bench_compare.py --url $URL --label modal \
   --variant fp16-base --n 20 --steps 30 --gpu L40S --price-per-hour 1.95
 ```
 
+
+
 ### Modal vs RunPod - L40S, fp16-base, 30 steps, N=20, warm, concurrency 1
 
 <p align="center">
   <img src="public/serverless-benchmark.png" alt="Modal vs RunPod L40S serverless benchmark" width="100%" />
 </p>
 
-| metric | Modal (serverless) | RunPod (Pod) |
-| --- | --- | --- |
-| GPU latency (server-measured) p50 / p95 | 2.74s / 2.75s | 2.71s / 2.75s |
-| denoise p50 | 2.64s | 2.62s |
-| throughput (mean) | 11.4 steps/s | 11.5 steps/s |
-| wall p50 / p95 | 6.9s / 10.7s | 4.1s / 4.7s |
-| cost / 1000 images (p50) | $3.75 | **$0.90** |
-| keep-warm / day | $46.80 @ $1.95/hr | **$18.96** @ $0.79/hr |
+
+| metric                                  | Modal (serverless) | RunPod (Pod)          |
+| --------------------------------------- | ------------------ | --------------------- |
+| GPU latency (server-measured) p50 / p95 | 2.74s / 2.75s      | 2.71s / 2.75s         |
+| denoise p50                             | 2.64s              | 2.62s                 |
+| throughput (mean)                       | 11.4 steps/s       | 11.5 steps/s          |
+| wall p50 / p95                          | 6.9s / 10.7s       | 4.1s / 4.7s           |
+| cost / 1000 images (p50)                | $3.75              | **$0.90**             |
+| keep-warm / day                         | $46.80 @ $1.95/hr  | **$18.96** @ $0.79/hr |
+
+
+<p align="center">
+  <img src="public/flash-attention.png" alt="Vanila vs SDPA Pytorch Performance" width="100%" />
+</p>
 
 **Same GPU, same compute.** The server-measured denoise time is identical (~2.7s,
 ~11.4 steps/s) - as it must be, since both run the same L40S engine. The platforms
