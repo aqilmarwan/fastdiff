@@ -58,3 +58,16 @@ MAX_DIM: int = int(os.getenv("STUDIO_MAX_DIM", "1024"))
 # Override variants.yaml's `max_resident` (engine bundles kept hot in VRAM). Set to
 # 1 on a 24GB card (A10G/L4) so a second bundle can't OOM the GPU; None = use YAML.
 MAX_RESIDENT: int | None = int(os.getenv("STUDIO_MAX_RESIDENT")) if os.getenv("STUDIO_MAX_RESIDENT") else None
+
+# Serving backend on the GPU plane. Default (unset) = TensorRT engines. Set to
+# "diffusers" to run the un-quantised PyTorch reference pipeline -- the
+# framework-overhead baseline the TRT plane is measured against.
+BACKEND: str | None = os.getenv("STUDIO_BACKEND")
+
+# Attention implementation for the diffusers backend:
+#   sdpa    - AttnProcessor2_0 -> torch SDPA (dispatches to the flash-attention
+#             kernel on SDXL); the default and the "flash on" case.
+#   flash   - like sdpa but forces the flash SDPA backend (efficient fallback).
+#   xformers- xFormers memory-efficient attention.
+#   vanilla - naive matmul-softmax-matmul (no fusion); the "flash off" baseline.
+ATTENTION: str = os.getenv("STUDIO_ATTENTION", "sdpa")
