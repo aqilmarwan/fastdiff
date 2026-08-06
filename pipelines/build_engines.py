@@ -65,7 +65,8 @@ def _normalise_lora(lora_path: Path) -> dict:
     return out
 
 
-def build_bundle(spec: EngineSpec, base_model: str, out_root: Path, lora_dir: Path) -> Path:
+def build_bundle(spec: EngineSpec, base_model: str, out_root: Path, lora_dir: Path,
+                 calib_dir: Optional[Path] = None) -> Path:
     """Build a full engine bundle for one variant. Returns its local directory."""
     import torch
     from diffusers import StableDiffusionXLPipeline
@@ -102,7 +103,8 @@ def build_bundle(spec: EngineSpec, base_model: str, out_root: Path, lora_dir: Pa
         "vae_decoder": (_export_vae_decoder(pipe.vae, onnx_dir), "fp16"),
     }
     for name, (onnx_path, precision) in components.items():
-        calibrator = _UNetCalibrator(onnx_dir / f"{name}.calib") if (name == "unet" and precision == "int8") else None
+        calibrator = (_UNetCalibrator(onnx_dir / f"{name}.calib", calib_dir=calib_dir)
+                      if (name == "unet" and precision == "int8") else None)
         _build_engine(onnx_path, bundle / f"{name}.plan", precision, calibrator)
 
     # Tokenizers travel with the bundle so serving loads them offline.
@@ -209,16 +211,17 @@ def _export_vae_decoder(vae, onnx_dir: Path) -> Path:
 # --------------------------------------------------------------------------- #
 
 
-def _UNetCalibrator(cache_path: Path, num_batches: int = 16):
+def _UNetCalibrator(cache_path: Path, calib_dir: Optional[Path] = None, num_batches: int = 16):
     """INT8 entropy calibrator for the UNet, fed via torch device tensors.
 
-    Returns an ``IInt8EntropyCalibrator2`` instance (built inside a factory so
-    ``tensorrt`` stays a lazy import). It streams ``num_batches`` of representative
-    random inputs at CFG batch 2 -- enough to populate INT8 scales and produce a
-    working engine, and caches them to ``cache_path`` so rebuilds are instant.
+    If ``calib_dir`` holds ``batch_*.pt`` files captured by
+    ``pipelines/capture_calib.py`` (real UNet activations from actual denoising),
+    it calibrates on those -- the correct way, giving faithful INT8 scales.
+    Otherwise it falls back to random tensors: a *working* engine but poor scales
+    and noisy quality (this is what made INT8 a "fallback"). TRT's computed scales
+    are cached to ``cache_path``.
 
-    For production-grade quality, replace the random tensors with recorded
-    activations from real denoising steps; the interface is identical.
+    Built inside a factory so ``tensorrt`` stays a lazy import.
     """
     import tensorrt as trt
     import torch
@@ -230,25 +233,38 @@ def _UNetCalibrator(cache_path: Path, num_batches: int = 16):
         "text_embeds": (_B, 1280),
         "time_ids": (_B, 6),
     }
+    files = sorted(Path(calib_dir).glob("batch_*.pt")) if calib_dir else []
+    if files:
+        log.info("INT8 calibrating on %d real activation batches from %s", len(files), calib_dir)
+    else:
+        log.warning("INT8 calibrating on RANDOM tensors (no calib_dir) -- scales will be poor")
 
     class _Calib(trt.IInt8EntropyCalibrator2):
         def __init__(self):
             super().__init__()
             self.cache_path = Path(cache_path)
-            self.seen = 0
+            self.idx = 0
             self._buffers = {}  # keep refs so the device memory outlives get_batch
 
         def get_batch_size(self):
             return _B
 
         def get_batch(self, names):
-            if self.seen >= num_batches:
-                return None
-            self.seen += 1
-            self._buffers = {
-                n: torch.randn(shapes[n], device="cuda", dtype=torch.float16).contiguous()
-                for n in names if n in shapes
-            }
+            if files:
+                if self.idx >= len(files):
+                    return None
+                data = torch.load(files[self.idx], map_location="cpu")
+                self._buffers = {
+                    n: data[n].to("cuda", torch.float16).contiguous() for n in names if n in data
+                }
+            else:
+                if self.idx >= num_batches:
+                    return None
+                self._buffers = {
+                    n: torch.randn(shapes[n], device="cuda", dtype=torch.float16).contiguous()
+                    for n in names if n in shapes
+                }
+            self.idx += 1
             if len(self._buffers) != len(names):
                 return None
             return [int(self._buffers[n].data_ptr()) for n in names]
