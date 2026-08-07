@@ -55,7 +55,7 @@ build_image = (
     image=build_image,
     gpu="L40S",
     volumes={"/engines": engines, "/cache/hf": hf_cache},
-    timeout=5400,  # 90 min: first run downloads SDXL + captures + calibrated build
+    timeout=10800,  # 3 h: SDXL download + capture + calibrated quantize + slow TRT build
 )
 def build_variant(
     engine: str = "int8-base",
@@ -85,6 +85,7 @@ def build_variant(
              "--base-model", base_model],
             check=True,
         )
+        hf_cache.commit()  # persist SDXL weights so later builds skip the ~7 GB download
 
     # 2. Build the engine bundle with those scales.
     spec = EngineSpec(engine=engine, precision=precision, lora=(lora or None))
