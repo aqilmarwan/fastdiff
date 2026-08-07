@@ -27,19 +27,27 @@ hf_cache = modal.Volume.from_name("fastdiff-hf-cache", create_if_missing=True)  
 # NGC TensorRT 10.3 (must match the serving TRT major) + the offline build stack.
 build_image = (
     modal.Image.from_registry("nvcr.io/nvidia/tensorrt:24.08-py3")
+    # Versions PINNED to the NGC tensorrt:24.08 base (CUDA 12.6, TensorRT 10.3).
+    # Loose `>=` pins previously dragged in torch 2.13 + CUDA 13 libs on top of a
+    # CUDA-12 base, which hung the build. Keep the whole stack in the torch-2.4 era.
     .pip_install(
-        "torch>=2.4",
-        "diffusers>=0.31",
-        "transformers>=4.44",
-        "accelerate>=0.33",
-        "onnx>=1.16",
+        "torch==2.4.1",                  # cu124 -> matches the base's CUDA 12
+        "diffusers==0.31.0",
+        "transformers==4.44.2",
+        "accelerate>=0.33,<0.35",
+        "onnx>=1.16,<1.18",
         "onnxscript>=0.1",
+        "onnx-graphsurgeon>=0.5,<0.6",   # FP8 zero-point conversion
+        "nvidia-modelopt[torch]>=0.19,<0.25",  # [torch] extra pulls pulp + quant deps
+        "pulp",                          # modelopt searcher dep (belt-and-suspenders)
         "safetensors>=0.4",
         "boto3>=1.34",
         extra_index_url="https://download.pytorch.org/whl/cu124",
     )
     .env({"HF_HOME": "/cache/hf", "PYTHONPATH": "/root/pipelines"})
     .add_local_dir("pipelines", "/root/pipelines", copy=True)
+    # LoRA weights for the *-lora variants (build_bundle fuses them before export).
+    .add_local_dir("inference/loras", "/root/pipelines/loras", copy=True)
 )
 
 
