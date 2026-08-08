@@ -44,11 +44,58 @@ build_image = (
         "boto3>=1.34",
         extra_index_url="https://download.pytorch.org/whl/cu124",
     )
-    .env({"HF_HOME": "/cache/hf", "PYTHONPATH": "/root/pipelines"})
+    # expandable_segments trims the fragmentation that pushed the folding-heavy UNet
+    # export just over the L40S's 44 GB (it left ~750 MB reserved-but-unallocated).
+    .env({"HF_HOME": "/cache/hf", "PYTHONPATH": "/root/pipelines",
+          "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     .add_local_dir("pipelines", "/root/pipelines", copy=True)
     # LoRA weights for the *-lora variants (build_bundle fuses them before export).
     .add_local_dir("inference/loras", "/root/pipelines/loras", copy=True)
 )
+
+
+@app.function(image=build_image, gpu="L40S", volumes={"/cache/hf": hf_cache}, timeout=1800)
+def smoke_quant(base_model: str = "stabilityai/stable-diffusion-xl-base-1.0") -> None:
+    """Minimal repro of the ModelOpt calibration hang: load UNet -> one un-quantized
+    forward (baseline) -> mtq.quantize with a single-forward loop. Reaches the exact
+    hang in ~5 min (no capture/export/TRT), so fixes can be iterated cheaply."""
+    import sys
+
+    import torch
+
+    sys.path.insert(0, "/root/pipelines")
+    from diffusers import StableDiffusionXLPipeline
+
+    print("[smoke] loading SDXL UNet ...", flush=True)
+    pipe = StableDiffusionXLPipeline.from_pretrained(
+        base_model, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+    unet = pipe.unet.to("cuda").eval()
+    print("[smoke] UNet loaded", flush=True)
+
+    def batch():
+        return dict(
+            sample=torch.randn(2, 4, 128, 128, dtype=torch.float16, device="cuda"),
+            timestep=torch.tensor([999.0, 999.0], dtype=torch.float16, device="cuda"),
+            encoder_hidden_states=torch.randn(2, 77, 2048, dtype=torch.float16, device="cuda"),
+            text_embeds=torch.randn(2, 1280, dtype=torch.float16, device="cuda"),
+            time_ids=torch.randn(2, 6, dtype=torch.float16, device="cuda"),
+        )
+
+    def fwd(m):
+        b = batch()
+        print("[smoke] running ONE forward ...", flush=True)
+        with torch.no_grad():
+            m(b["sample"], b["timestep"], b["encoder_hidden_states"],
+              added_cond_kwargs={"text_embeds": b["text_embeds"], "time_ids": b["time_ids"]})
+        torch.cuda.synchronize()
+        print("[smoke] forward DONE", flush=True)
+
+    print("[smoke] baseline un-quantized forward:", flush=True)
+    fwd(unet)
+    print("[smoke] baseline OK -> now mtq.quantize (INT8) ...", flush=True)
+    import modelopt.torch.quantization as mtq
+    mtq.quantize(unet, mtq.INT8_DEFAULT_CFG, fwd)
+    print("[smoke] mtq.quantize DONE -- no hang!", flush=True)
 
 
 @app.function(
@@ -64,6 +111,8 @@ def build_variant(
     base_model: str = "stabilityai/stable-diffusion-xl-base-1.0",
     steps: int = 30,
     every: int = 3,
+    calib_size: int = 0,        # 0 = ModelOpt default (int8:64, fp8:128); small = fast diagnostic
+    capture_prompts: int = 0,   # 0 = all 30; small = fast diagnostic capture
     publish: bool = False,
 ) -> None:
     import pathlib
@@ -79,12 +128,12 @@ def build_variant(
     if precision in ("int8", "fp8"):
         calib_dir = pathlib.Path("/tmp/calib")
         print(f"[build] capturing calibration: {steps} steps, every {every} ...", flush=True)
-        subprocess.run(
-            [sys.executable, "/root/pipelines/capture_calib.py",
-             "--out", str(calib_dir), "--steps", str(steps), "--every", str(every),
-             "--base-model", base_model],
-            check=True,
-        )
+        cap_cmd = [sys.executable, "/root/pipelines/capture_calib.py",
+                   "--out", str(calib_dir), "--steps", str(steps), "--every", str(every),
+                   "--base-model", base_model]
+        if capture_prompts:
+            cap_cmd += ["--limit-prompts", str(capture_prompts)]
+        subprocess.run(cap_cmd, check=True)
         hf_cache.commit()  # persist SDXL weights so later builds skip the ~7 GB download
 
     # 2. Build the engine bundle with those scales.
@@ -92,7 +141,7 @@ def build_variant(
     out_root = pathlib.Path("/tmp/out")
     print(f"[build] building {engine} ({precision}) ...", flush=True)
     bundle = build_bundle(spec, base_model, out_root, pathlib.Path("/root/pipelines/loras"),
-                          calib_dir=calib_dir)
+                          calib_dir=calib_dir, calib_size=(calib_size or None))
 
     # 3. Write into the serving Volume (skip the heavy onnx/ dir).
     dest = pathlib.Path("/engines") / engine
